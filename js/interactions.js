@@ -197,13 +197,48 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // 5. CANVAS PARTICLE SYSTEM
+    // 5. CANVAS PARTICLE SYSTEM - GREEN LEAVES
     const canvas = document.getElementById('hero-canvas');
     if (canvas && !prefersReducedMotion) {
         const ctx = canvas.getContext('2d');
         let width, height;
         let particles = [];
         let animationFrameId;
+
+        let gyroX = 0;
+        let gyroY = 0;
+
+        // Request device orientation permission on first click for iOS, and bind listener
+        let gyroInitialized = false;
+        const initGyro = () => {
+            if (gyroInitialized) return;
+            gyroInitialized = true;
+            
+            if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                DeviceOrientationEvent.requestPermission()
+                    .then(permissionState => {
+                        if (permissionState === 'granted') {
+                            window.addEventListener('deviceorientation', handleOrientation);
+                        }
+                    })
+                    .catch(console.error);
+            } else {
+                window.addEventListener('deviceorientation', handleOrientation);
+            }
+        };
+        
+        const handleOrientation = (event) => {
+            if (!event.gamma || !event.beta) return;
+            // gamma is left-to-right (-90 to 90)
+            // beta is front-to-back (-180 to 180)
+            gyroX = event.gamma / 45; // map to roughly -2 to 2
+            gyroY = event.beta / 45;
+        };
+
+        // Initialize gyro on first user interaction
+        document.addEventListener('click', initGyro, { once: true });
+        document.addEventListener('touchstart', initGyro, { once: true });
+
 
         const resize = () => {
             width = canvas.width = window.innerWidth;
@@ -212,29 +247,30 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const initParticles = () => {
             particles = [];
-            const count = window.innerWidth < 768 ? 60 : 120;
-            // Ember and ash colors (RGB) - More vibrant oranges and reds, plus dark ashes
+            const count = window.innerWidth < 768 ? 40 : 80;
+            // Shades of green for leaves
             const colors = [
-                { r: 255, g: 69, b: 0, glow: true },    // Red-Orange
-                { r: 255, g: 140, b: 0, glow: true },   // Dark Orange
-                { r: 255, g: 200, b: 50, glow: true },  // Yellow-Orange
-                { r: 100, g: 100, b: 100, glow: false }, // Dark Ash
-                { r: 40, g: 40, b: 40, glow: false }     // Black Ash
+                { r: 34, g: 139, b: 34 },   // ForestGreen
+                { r: 107, g: 142, b: 35 },  // OliveDrab
+                { r: 152, g: 251, b: 152 }, // PaleGreen
+                { r: 46, g: 139, b: 87 },   // SeaGreen
+                { r: 85, g: 107, b: 47 }    // DarkOliveGreen
             ];
             for (let i = 0; i < count; i++) {
                 const colorObj = colors[Math.floor(Math.random() * colors.length)];
                 particles.push({
                     x: Math.random() * width,
                     y: Math.random() * height,
-                    size: Math.random() * 3 + 0.5,
-                    speedX: Math.random() * 2 - 1,
-                    speedY: Math.random() * -3 - 1, // Move up faster like heat
-                    baseOpacity: Math.random() * 0.8 + 0.2,
+                    size: Math.random() * 8 + 6, // Larger leaf size (6px to 14px)
+                    speedX: Math.random() * 2 + 0.5, // Blow to the right
+                    speedY: Math.random() * 1 + 0.5, // Fall down slowly
+                    baseOpacity: Math.random() * 0.4 + 0.6, // Slightly more opaque (0.6 to 1.0)
                     colorStr: `${colorObj.r}, ${colorObj.g}, ${colorObj.b}`,
-                    glow: colorObj.glow,
                     angle: Math.random() * Math.PI * 2,
-                    spin: Math.random() * 0.2 - 0.1,
-                    sway: Math.random() * 2
+                    spin: Math.random() * 0.05 - 0.025,
+                    swayOffset: Math.random() * Math.PI * 2,
+                    swaySpeed: Math.random() * 0.02 + 0.01,
+                    swayAmount: Math.random() * 1.5 + 0.5
                 });
             }
         };
@@ -244,42 +280,43 @@ document.addEventListener('DOMContentLoaded', () => {
             
             for (let i = 0; i < particles.length; i++) {
                 const p = particles[i];
-                // Sway motion (chaotic wind)
-                p.x += p.speedX + Math.sin(p.angle) * p.sway;
-                p.y += p.speedY;
+                
+                // Sway motion (wind breeze)
+                p.swayOffset += p.swaySpeed;
+                p.x += p.speedX + Math.sin(p.swayOffset) * p.swayAmount + gyroX * 2;
+                p.y += p.speedY + Math.cos(p.swayOffset * 0.5) * (p.swayAmount * 0.5) + gyroY * 2;
                 p.angle += p.spin;
                 
-                // Sharp flicker effect for glowing embers
-                let currentOpacity = p.baseOpacity;
-                if (p.glow) {
-                    currentOpacity = p.baseOpacity * (0.3 + Math.random() * 0.7);
-                }
-                
-                // Wrap around smoothly and simulate dying out at the top
-                if (p.y < -50) {
-                    p.y = height + 50;
+                // Wrap around smoothly
+                if (p.y > height + 50) {
+                    p.y = -50;
                     p.x = Math.random() * width;
-                    p.baseOpacity = Math.random() * 0.8 + 0.2; // reset opacity
                 }
-                if (p.x < -50) p.x = width + 50;
-                if (p.x > width + 50) p.x = -50;
+                if (p.x > width + 50) {
+                    p.x = -50;
+                    p.y = Math.random() * height;
+                }
 
+                ctx.save();
+                ctx.translate(p.x, p.y);
+                ctx.rotate(p.angle);
+                
+                // Draw leaf shape
                 ctx.beginPath();
-                ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                ctx.moveTo(0, -p.size);
+                ctx.quadraticCurveTo(p.size, 0, 0, p.size);
+                ctx.quadraticCurveTo(-p.size, 0, 0, -p.size);
                 
-                if (p.glow) {
-                    ctx.shadowBlur = p.size * 3 + 2;
-                    ctx.shadowColor = `rgba(${p.colorStr}, 1)`;
-                } else {
-                    ctx.shadowBlur = 0;
-                }
+                // Very subtle shadow for depth, no glow
+                ctx.shadowBlur = 2;
+                ctx.shadowColor = 'rgba(0,0,0,0.3)';
+                ctx.shadowOffsetY = 2;
                 
-                ctx.fillStyle = `rgba(${p.colorStr}, ${currentOpacity})`;
+                ctx.fillStyle = `rgba(${p.colorStr}, ${p.baseOpacity})`;
                 ctx.fill();
+                
+                ctx.restore();
             }
-            
-            // Reset shadow to not affect other things if any
-            ctx.shadowBlur = 0;
             
             animationFrameId = requestAnimationFrame(draw);
         };
@@ -525,3 +562,94 @@ window.closeJoinModal = function() {
     content.classList.remove('scale-100');
     content.classList.add('scale-95');
 };
+
+
+    // TOUCH LEAF BURST EFFECT
+    document.addEventListener('click', (e) => {
+        createLeafBurst(e.clientX, e.clientY);
+    });
+    // For mobile touch, use touchstart for immediate feedback, but prevent double firing if click also fires
+    document.addEventListener('touchstart', (e) => {
+        if(e.touches.length > 0) {
+            createLeafBurst(e.touches[0].clientX, e.touches[0].clientY);
+        }
+    }, {passive: true});
+
+    function createLeafBurst(x, y) {
+        const count = 5 + Math.floor(Math.random() * 4); // 5 to 8 leaves
+        
+        for (let i = 0; i < count; i++) {
+            const leaf = document.createElement('div');
+            leaf.classList.add('leaf-burst');
+            
+            // Random size between 8px and 16px
+            const size = 8 + Math.random() * 8;
+            leaf.style.width = size + 'px';
+            leaf.style.height = size + 'px';
+            
+            // Initial position
+            leaf.style.left = (x - size/2) + 'px';
+            leaf.style.top = (y - size/2) + 'px';
+            
+            document.body.appendChild(leaf);
+            
+            // GSAP animation
+            const angle = Math.random() * Math.PI * 2;
+            const distance = 30 + Math.random() * 60; // shoot out 30px to 90px
+            const duration = 0.5 + Math.random() * 0.5; // 0.5s to 1s
+            
+            gsap.to(leaf, {
+                x: Math.cos(angle) * distance,
+                y: Math.sin(angle) * distance + 40, // add a little gravity (drop down)
+                rotation: Math.random() * 360,
+                opacity: 0,
+                duration: duration,
+                ease: "power2.out",
+                onComplete: () => {
+                    leaf.remove();
+                }
+            });
+        }
+    }
+
+
+    
+
+    // LIVE TIME WIDGET
+    const liveTimeEl = document.getElementById('live-time');
+    if (liveTimeEl) {
+        const updateTime = () => {
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString('tr-TR', { 
+                hour: '2-digit', 
+                minute: '2-digit', 
+                timeZone: 'Europe/Istanbul' 
+            });
+            liveTimeEl.textContent = timeStr;
+        };
+        updateTime();
+        setInterval(updateTime, 10000); // Her 10 saniyede bir güncelle
+    }
+
+
+    // WEATHER FETCH LOGIC
+    const weatherWrapper = document.getElementById('weather-wrapper');
+    if (weatherWrapper) {
+        const fetchWeather = async () => {
+            try {
+                const res = await fetch('https://api.open-meteo.com/v1/forecast?latitude=41.0138&longitude=28.9497&current_weather=true');
+                const data = await res.json();
+                
+                // Get temperature and round it
+                const temp = Math.round(data.current_weather.temperature);
+                
+                // Display temperature instead of icon
+                weatherWrapper.textContent = `${temp}°C`;
+                
+            } catch (error) {
+                console.error("Hava durumu alınamadı:", error);
+            }
+        };
+        fetchWeather();
+        setInterval(fetchWeather, 30 * 60 * 1000);
+    }
