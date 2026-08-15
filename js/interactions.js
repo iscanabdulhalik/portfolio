@@ -565,15 +565,17 @@ window.closeJoinModal = function() {
 
 
     // TOUCH LEAF BURST EFFECT
-    document.addEventListener('click', (e) => {
-        createLeafBurst(e.clientX, e.clientY);
-    });
-    // For mobile touch, use touchstart for immediate feedback, but prevent double firing if click also fires
-    document.addEventListener('touchstart', (e) => {
-        if(e.touches.length > 0) {
-            createLeafBurst(e.touches[0].clientX, e.touches[0].clientY);
-        }
-    }, {passive: true});
+    const handleLeafBurst = (e) => {
+        // Prevent triggering leaf burst on interactive elements to avoid jitter/double-fire
+        if (e.target.closest('button, a, input, textarea, select, .nav-link')) return;
+        
+        const x = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
+        const y = e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
+        createLeafBurst(x, y);
+    };
+
+    document.addEventListener('click', handleLeafBurst);
+    document.addEventListener('touchstart', handleLeafBurst, {passive: true});
 
     function createLeafBurst(x, y) {
         const count = 5 + Math.floor(Math.random() * 4); // 5 to 8 leaves
